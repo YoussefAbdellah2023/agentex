@@ -1,44 +1,64 @@
-# AgenTeX — agentic test execution for Claude Code
+# AgenTeX
 
-**AgenTeX** (Agentic Test eXecution) takes the hassle of **manual test execution** off your
-plate. Instead of clicking through the same scenarios by hand, an agent plans them, runs them,
-captures screenshot/log evidence, and produces a consolidated defect report — either
-**sequentially** (human-in-the-loop, approving each step) or in **parallel** (autonomous, one
-session per test file).
+**Agentic QA for Claude Code — an agent plans, runs, and reports your tests so you don't click through them by hand.**
 
-The agent **never modifies your application code** — it only writes test artifacts.
+[![Version](https://img.shields.io/badge/version-0.8.1-blue.svg)](./CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-8A2BE2.svg)](https://docs.anthropic.com/en/docs/claude-code)
+[![Playwright](https://img.shields.io/badge/Playwright-CLI-2EAD33.svg?logo=playwright&logoColor=white)](https://www.npmjs.com/package/@playwright/cli)
+[![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-integration-0078D7.svg?logo=azuredevops&logoColor=white)](https://azure.microsoft.com/en-us/products/devops)
 
-### What works today
+AgenTeX (Agentic Test eXecution) takes manual test execution off your plate. Instead of clicking the
+same scenarios by hand, an agent plans them, drives a **real browser** via
+[`@playwright/cli`](https://www.npmjs.com/package/@playwright/cli), captures screenshot/log evidence,
+and produces a consolidated defect report — either **sequentially** (human-in-the-loop) or in
+**parallel** (autonomous, one session per spec file). It **never modifies your application code**.
 
-| Capability | Status |
-|-----------|--------|
-| **Browser test execution** — drives a real browser via [`@playwright/cli`](https://www.npmjs.com/package/@playwright/cli) | ✅ Available |
-| **Azure resource access** — reach Azure resources mid-run via the `az` CLI | ✅ Available (helper skill) |
-| **Azure DevOps QA planning** — estimate sprint stories & create `[Testing]` tasks | ✅ Available (helper skill) |
-| **Azure DevOps test design** — analyze story ACs & create linked test cases | ✅ Available (helper skill) |
-| **API & DB steps in tests** — cataloged API calls & SQL checks mid-run (`integration/`) | ✅ Available |
-| **KB questions in tests** — ask your project's knowledge base mid-run (`kb:`), advisory only | ✅ Available |
-| **Standalone API & database test suites** | 🚧 Planned |
+## [Getting Started](./docs/getting-started.md)
 
-Most of this README covers the **browser-testing** flow — the core of AgenTeX today. For the
-Azure DevOps estimation flow, see [QA task estimation](#qa-task-estimation-on-azure-devops).
-
-## Quick start
+New here? **[Getting Started](./docs/getting-started.md)** walks you through install → browser driver
+→ `/init-test` → permissions → first run. The short version:
 
 ```
 /plugin marketplace add MhmdElGazzar/elgazzar-plugins
 /plugin install agentex@elgazzar-plugins
+/init-test
+/execute-test https://example.com
 ```
 
-Then, in the project you want to test: `/init-test` to scaffold sample specs, and
-`/execute-test https://example.com` to run. See [One-time setup](#one-time-setup-in-the-project-you-want-to-test) for the Playwright + permissions steps.
+## Features — how each one works
 
-## QA task estimation on Azure DevOps
+| Feature | How it works | Docs |
+|---------|--------------|------|
+| **Browser testing** | An agent plans scenarios, drives a real `playwright-cli` browser, screenshots each one, and reports defects — sequential (approve each step) or parallel (one `qa-executor` subagent per spec file). | [browser-testing](./docs/browser-testing.md) |
+| **API & DB steps** | `api:` / `db:` scenario steps run **only** the named, parameterized requests/queries in your `integration/` catalog — the agent never composes its own SQL or HTTP; DDL is refused. | [api-db-steps](./docs/api-db-steps.md) |
+| **Ask the KB** | `kb:` steps (or `/ask-kb`) query your project's KB Ask API for advisory context — informs testing, **never** used as PASS/FAIL evidence. | [ask-kb](./docs/ask-kb.md) |
+| **Optimize login** | Pay a web app's login once per session: drive it live, verify by landmark (never by URL), save the browser session, and reload it into a fresh browser to continue. | [`skills/optimize-login/SKILL.md`](./skills/optimize-login/SKILL.md) |
+| **Azure DevOps planning** | `/estimate-story` estimates QA effort and creates 5 `[Testing]` tasks per story; `/design-test` turns story ACs into linked test cases — both via the `az` CLI, with confirmation. | [azure-devops](./docs/azure-devops.md) |
+| **Azure DevOps bug filing** | After a run, `bug-report-azure` files found defects as ADO **Bugs** via the `az` CLI — recommends severity/priority, links each to its parent User Story, validates & attaches screenshots, optionally fails the related test case; all behind one confirmation. | [azure-devops](./docs/azure-devops.md) |
+| **HTML report** | At the end of a run, generates a standalone, self-contained `extent-report.html` dashboard (donut chart, status cards, expandable per-test-case steps). | [extent-report](./docs/extent-report.md) |
+| **Configuration** | A keys-only `.env` drives targets and integrations; catalog files hold only env-var *names*, so secrets stay in the environment. | [configuration](./docs/configuration.md) |
 
-`/estimate-story` analyzes your sprint's User Stories, proposes an hours estimate per story
-(based on scenarios, fields, validations, integrations…), and — after you confirm each one —
-creates 5 `[Testing]` tasks on it (Requirement Review, Test Creation, Test Execution,
-Bug Review & Retest, Automation), iteration-inherited and assigned.
+See [docs/](./docs/) for the full reference on any feature.
+
+## Usage at a glance
+
+```
+# Sequential (human-in-the-loop) — natural language:
+Test https://example.com — the signup form: happy path plus empty and bad-email cases.
+
+# Parallel (autonomous) — one subagent per spec file:
+Run a parallel regression against https://example.com from the specs in test/suite1/.
+
+# Slash commands:
+/execute-test https://example.com
+/estimate-story 12345 12346
+/design-test 12345
+/ask-kb acme-store: how does the checkout flow work?
+```
+
+Every run writes to a timestamped `executions/execu_<timestamp>/` folder — `report.md`,
+`extent-report.html`, per-session logs/screenshots, and a merged bug list.
 
 One-time setup:
 
@@ -112,85 +132,22 @@ From Claude Code:
 > (`/plugin marketplace add` needs a repo that contains `.claude-plugin/marketplace.json`,
 > which is the `elgazzar-plugins` repo — not this plugin repo.)
 
-## One-time setup in the project you want to test
+## Contributing
 
-1. **Playwright CLI** (the agent will offer to do this, or run it yourself):
-   ```
-   npm install -D @playwright/cli
-   npx playwright-cli install-browser chromium
-   ```
-2. **Permissions** — plugin manifests can't ship permission rules, so copy the `permissions`
-   block from [`settings.example.json`](./settings.example.json) into your project's
-   `.claude/settings.json` (merge with anything already there). This pre-approves the safe
-   `playwright-cli` commands and denies secret reads / destructive actions.
+Contributions are welcome. Each capability is a self-contained skill under `skills/<name>/`
+(a `SKILL.md` orchestrator plus `references/`, `scripts/`, `templates/`), surfaced by a thin command
+in `commands/`. Open issues and PRs on the
+[GitHub repository](https://github.com/MhmdElGazzar/elgazzar-plugins). Keep the plugin generic — no
+employer- or project-specific data; use the neutral placeholders in [`.env.example`](./.env.example).
+Run the bundled script tests (e.g. `node skills/ask-kb/scripts/ask_kb.test.js`) before submitting.
 
-## Usage
+## Contributors
 
-- **Sequential (default, human-in-the-loop):**
-  > Test https://example.com — the signup form: happy path plus empty and bad-email cases.
-
-  The agent restates scope, proposes a numbered plan, and pauses for your approval at each
-  checkpoint, capturing a screenshot per scenario.
-
-- **Parallel (autonomous):** put one test spec per file in a `test/` directory
-  (see the ready-made examples in [`test/suite1/`](./test/suite1/)), then:
-  > Run a parallel regression against https://example.com from the specs in `test/suite1/`.
-
-  It spawns one `qa-executor` subagent per file (each in its own `-s=<session>`) and merges the
-  results.
-
-- Or use the commands: `/init-test` once to scaffold sample specs, then
-  `/execute-test https://example.com` to run.
-
-### Writing your own specs
-
-Start from the examples in [`test/suite1/`](./test/suite1/) — see
-[`test/README.md`](./test/README.md) for how specs are organized (one file per browser
-session, group files into suite folders, keep stateful flows in one file). Each spec is
-plain language: a target, acceptance criteria, and numbered happy/edge/negative scenarios.
-
-**One spec file = one browser session.** In parallel mode the orchestrator dispatches one
-`qa-executor` subagent per file in the suite, each in its own isolated session, then merges
-their defect lists into a single report. Here's a real spec — [`test/suite1/signup-form.md`](./test/suite1/signup-form.md):
-
-```markdown
-# Spec: Signup form validation
-
-Target: https://example.com/signup   <!-- edit to your app's signup page -->
-Type: form validation — NO real account is created (validation-only)
-
-## Acceptance criteria
-- Valid input reaches a visible success/confirmation state.
-- Invalid input is rejected with a specific, visible error message; the form must not submit.
-- No console errors or failed network calls during any scenario.
-
-## Scenarios
-1. **Happy path** — fill Name, a disposable email (`qa.tester@example.com`), and a valid
-   password, then submit. Expect a visible success confirmation (verify computed visibility,
-   not just DOM presence). Do NOT complete real account creation.
-2. **Empty required fields** — submit with every field blank. Expect an inline "required"
-   error on each field; the form must not submit.
-3. **Bad email format** — enter `not-an-email` and submit. Expect a specific email-format error.
-4. **Weak password** — enter a 3-character password and submit. Expect a length/strength error.
-
-## Notes
-- Screenshot every scenario (pass and fail).
-- Treat any console error or failed request as a defect even if the UI looks fine.
-```
-
-To add more coverage, drop another `.md` file next to it (e.g. `login.md`, `checkout.md`) —
-each becomes its own parallel session.
-
-### Output
-
-Every run writes everything under one timestamped folder in your project:
-
-```
-executions/execu_<YYYY-MM-DD_HH-MM-SS>/
-├── report.md
-├── browser-sessions/<session>/{logs,screenshots}/
-└── bugs/{bug-list.md,screenshots/}
-```
+- **Mohamed Elgazzar** — creator & maintainer
+- **Marwah Zain**
+- [**@mabdel130**](https://github.com/mabdel130) — `extent-report` skill (PR #1)
+- **YoussefKhalilTester**
+- **Hager-Helmy**
 
 ## License
 
